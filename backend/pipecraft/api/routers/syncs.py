@@ -90,3 +90,37 @@ def list_syncs(db: Session = Depends(get_db)):
     """
     syncs = db.query(models.Sync).order_by(models.Sync.name).all()
     return syncs
+
+@router.post("/{sync_id}/run", response_model=schemas.SyncRunOut)
+def run_sync(
+    sync_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Start a Sync run.
+
+    For this step, we only:
+    - validate the Sync exists
+    - create a SyncRun row with status='pending'
+    - return the run record
+
+    In the next step, we'll add the actual TRUNCATE+INSERT logic and
+    update status/row_count.
+    """
+    sync = db.query(models.Sync).filter(models.Sync.id == sync_id).first()
+    if not sync:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Sync with id={sync_id} not found.",
+        )
+
+    run = models.SyncRun(
+        sync_id=sync.id,
+        status=models.SyncStatus.PENDING,
+    )
+
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+
+    return run

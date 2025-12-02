@@ -132,3 +132,42 @@ class Sync(Base):
             f"<Sync(name={self.name!r}, source={self.source_table!r}, "
             f"dest={self.dest_schema}.{self.dest_table})>"
         )
+    
+class SyncStatus(str, enum.Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
+class SyncRun(Base):
+    __tablename__ = "sync_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    sync_id = Column(
+        Integer,
+        ForeignKey("syncs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    status = Column(
+        Enum(SyncStatus),
+        nullable=False,
+        default=SyncStatus.PENDING,
+    )
+
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    ended_at = Column(DateTime, nullable=True)
+
+    row_count = Column(Integer, nullable=True)  # rows copied (we'll fill later)
+    error_message = Column(String(2000), nullable=True)
+
+    sync = relationship("Sync", backref="runs")
+
+    def __repr__(self) -> str:
+        return (
+            f"<SyncRun(id={self.id}, sync_id={self.sync_id}, "
+            f"status={self.status.value!r}, row_count={self.row_count})>"
+        )

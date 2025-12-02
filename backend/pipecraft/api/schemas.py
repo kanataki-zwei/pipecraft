@@ -15,6 +15,25 @@ class WriteMode(str, Enum):
     truncate_insert = "truncate_insert"
     # Later: append = "append", upsert = "upsert", etc.
 
+class SyncStatus(str, Enum):
+    pending = "pending"
+    running = "running"
+    success = "success"
+    failed = "failed"
+
+
+class SyncRunOut(BaseModel):
+    id: int
+    sync_id: int
+    status: SyncStatus
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+    row_count: Optional[int] = None
+    error_message: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+        orm_mode = True
 
 class SyncBase(BaseModel):
     name: str = Field(..., max_length=100)
