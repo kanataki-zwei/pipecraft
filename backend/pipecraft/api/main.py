@@ -3,8 +3,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from pipecraft.api.routers import connections  # 👈 new
-from pipecraft.db.base import init_db          # 👈 optional init
+from pipecraft.api.routers import connections, syncs
+from pipecraft.db.base import init_db    
 
 app = FastAPI(title="PipeCraft API", version="0.1.0")
 
@@ -33,3 +33,4 @@ def health_check():
 
 # Register routers
 app.include_router(connections.router)
+app.include_router(syncs.router)

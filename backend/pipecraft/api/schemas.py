@@ -2,6 +2,7 @@
 
 from enum import Enum
 from typing import Optional
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 
@@ -10,6 +11,52 @@ class DBType(str, Enum):
     postgres = "postgres"
     mysql = "mysql"
 
+class WriteMode(str, Enum):
+    truncate_insert = "truncate_insert"
+    # Later: append = "append", upsert = "upsert", etc.
+
+
+class SyncBase(BaseModel):
+    name: str = Field(..., max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+
+    source_connection_id: int
+    source_table: str
+
+    dest_connection_id: int
+    dest_schema: Optional[str] = None
+    dest_table: str
+
+    write_mode: WriteMode = WriteMode.truncate_insert
+
+
+class SyncCreate(SyncBase):
+    """
+    For now, creation schema is same as base.
+    """
+    pass
+
+
+class SyncOut(BaseModel):
+    id: int
+    name: str
+    description: Optional[str]
+
+    source_connection_id: int
+    source_table: str
+
+    dest_connection_id: int
+    dest_schema: Optional[str]
+    dest_table: str
+
+    write_mode: WriteMode
+
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True  # Pydantic v2; if v1, orm_mode = True
+        orm_mode = True
 
 class ConnectionBase(BaseModel):
     name: str = Field(..., max_length=100)
