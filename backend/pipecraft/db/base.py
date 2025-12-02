@@ -6,7 +6,7 @@ DATABASE_URL = "sqlite:///./pipecraft.db"
 
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False},  # multithreaded use
+    connect_args={"check_same_thread": False},  # required for SQLite + multithreaded use
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -18,10 +18,10 @@ def init_db():
     """
     Initialize the metadata database.
 
-    For now this just ensures all tables defined on Base are created.
+    This will create tables for all models that inherit from Base,
+    such as Connection.
     """
-    from sqlalchemy import inspect
+    # Import models so they are registered with SQLAlchemy's metadata
+    from . import models  # noqa: F401
 
-    inspector = inspect(engine)
-    # This will create tables for any models that inherit from Base
     Base.metadata.create_all(bind=engine)
