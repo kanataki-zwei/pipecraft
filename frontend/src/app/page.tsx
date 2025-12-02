@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -55,9 +57,18 @@ export default async function Home() {
               </p>
             </div>
           </div>
-          <span className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-400">
-            v0 • backend wiring
-          </span>
+          <nav className="flex items-center gap-3 text-xs">
+            <Link
+              href="/connections"
+              className="rounded-full border border-slate-700 px-3 py-1 text-slate-200 hover:border-emerald-500 hover:text-emerald-300"
+            >
+              Connections
+            </Link>
+            <span className="rounded-full border border-slate-700 px-3 py-1 text-slate-400">
+              v0 • backend wiring
+            </span>
+          </nav>
+
         </header>
 
         {/* Content layout */}
