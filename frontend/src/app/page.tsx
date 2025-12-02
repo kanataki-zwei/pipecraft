@@ -64,10 +64,17 @@ export default async function Home() {
             >
               Connections
             </Link>
+            <Link
+              href="/syncs"
+              className="rounded-full border border-slate-700 px-3 py-1 text-slate-200 hover:border-emerald-500 hover:text-emerald-300"
+            >
+              Syncs
+            </Link>
             <span className="rounded-full border border-slate-700 px-3 py-1 text-slate-400">
               v0 • backend wiring
             </span>
           </nav>
+
 
         </header>
 
