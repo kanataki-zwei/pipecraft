@@ -11,7 +11,11 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    ForeignKey,  
 )
+
+from sqlalchemy.orm import relationship  
+
 
 from .base import Base
 
@@ -62,4 +66,69 @@ class Connection(Base):
         return (
             f"<Connection(name={self.name!r}, db_type={self.db_type.value!r}, "
             f"is_source={self.is_source}, is_destination={self.is_destination})>"
+        )
+
+class WriteMode(str, enum.Enum):
+    TRUNCATE_INSERT = "truncate_insert"
+    # Later we can add: APPEND, UPSERT, etc.
+    
+
+class Sync(Base):
+    __tablename__ = "syncs"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Human-friendly unique name for the sync
+    name = Column(String(100), unique=True, nullable=False, index=True)
+
+    description = Column(String(500), nullable=True)
+
+    # Source side
+    source_connection_id = Column(
+        Integer,
+        ForeignKey("connections.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    source_table = Column(String(255), nullable=False)
+
+    # Destination side
+    dest_connection_id = Column(
+        Integer,
+        ForeignKey("connections.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    dest_schema = Column(String(255), nullable=True)  # nullable: some DBs might not use schema
+    dest_table = Column(String(255), nullable=False)
+
+    # For v0 we only support truncate-insert, but model is future-proof
+    write_mode = Column(
+        Enum(WriteMode),
+        nullable=False,
+        default=WriteMode.TRUNCATE_INSERT,
+    )
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    # Optional relationships back to Connection
+    source_connection = relationship(
+        "Connection",
+        foreign_keys=[source_connection_id],
+        lazy="joined",
+    )
+    dest_connection = relationship(
+        "Connection",
+        foreign_keys=[dest_connection_id],
+        lazy="joined",
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<Sync(name={self.name!r}, source={self.source_table!r}, "
+            f"dest={self.dest_schema}.{self.dest_table})>"
         )
