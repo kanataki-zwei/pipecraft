@@ -109,6 +109,54 @@ def list_tables_for_connection(conn: models.Connection, schema: str) -> list[dic
 
     return tables
 
+def list_columns_for_table(
+    conn: models.Connection,
+    schema: str,
+    table: str,
+) -> list[dict]:
+    """
+    Return columns for a given table with basic metadata.
+
+    Output shape:
+    [
+      {"name": "id", "type": "INTEGER", "nullable": false, "primary_key": true},
+      {"name": "email", "type": "VARCHAR(255)", "nullable": false, "primary_key": false},
+      ...
+    ]
+    """
+    db_url = build_db_url(conn)
+    engine = create_engine(db_url, pool_pre_ping=True)
+    insp = inspect(engine)
+
+    # For Postgres, schema is used directly
+    # For MySQL, schema is effectively the database; inspector ignores schema arg
+    if conn.db_type == models.DBType.POSTGRES:
+        cols = insp.get_columns(table_name=table, schema=schema)
+        pk_info = insp.get_pk_constraint(table_name=table, schema=schema)
+    elif conn.db_type == models.DBType.MYSQL:
+        cols = insp.get_columns(table_name=table)
+        pk_info = insp.get_pk_constraint(table_name=table)
+        schema = conn.database  # normalize to database as schema
+    else:
+        raise ValueError(f"Unsupported db_type: {conn.db_type}")
+
+    pk_cols = set(pk_info.get("constrained_columns") or [])
+
+    result: list[dict] = []
+    for col in cols:
+        col_name = col["name"]
+        col_type = str(col["type"])
+        nullable = bool(col.get("nullable", True))
+        result.append(
+            {
+                "name": col_name,
+                "type": col_type,
+                "nullable": nullable,
+                "primary_key": col_name in pk_cols,
+            }
+        )
+
+    return result
 
 @router.post(
     "/",
@@ -289,3 +337,45 @@ def list_tables(
         "tables": tables,
     }
 
+@router.get("/{name}/columns")
+def list_columns(
+    name: str,
+    schema: str,
+    table: str,
+    db: Session = Depends(get_db),
+):
+    """
+    List columns for a given connection, schema, and table.
+
+    Call pattern:
+    1. GET /connections/{name}/schemas
+    2. GET /connections/{name}/tables?schema=public
+    3. GET /connections/{name}/columns?schema=public&table=users
+    """
+    conn = (
+        db.query(models.Connection)
+        .filter(models.Connection.name == name)
+        .first()
+    )
+
+    if not conn:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Connection '{name}' not found.",
+        )
+
+    try:
+        columns = list_columns_for_table(conn, schema=schema, table=table)
+    except SQLAlchemyError as e:
+        msg = str(e.__cause__ or e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to list columns: {msg}",
+        )
+
+    return {
+        "connection": conn.name,
+        "schema": schema,
+        "table": table,
+        "columns": columns,
+    }
