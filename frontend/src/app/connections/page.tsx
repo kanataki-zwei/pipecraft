@@ -1,3 +1,5 @@
+import NewConnectionForm from "./NewConnectionForm";
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -56,69 +58,85 @@ export default async function ConnectionsPage() {
           </a>
         </header>
 
-        {/* Content */}
-        {connections.length === 0 ? (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 text-sm text-slate-400">
-            No connections found.
-            <br />
-            <span className="text-xs text-slate-500">
-              Create a connection via the backend API first (e.g.{" "}
-              <code className="text-emerald-400">/docs</code>) — next step
-              we&apos;ll add a UI form here.
-            </span>
+        <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
+          {/* Left: table */}
+          <div>
+            {connections.length === 0 ? (
+              <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 text-sm text-slate-400">
+                No connections found.
+                <br />
+                <span className="text-xs text-slate-500">
+                  Use the form on the right to create your first connection.
+                </span>
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="border-b border-slate-800 bg-slate-900/80 text-xs uppercase text-slate-400">
+                    <tr>
+                      <th className="px-4 py-3">Name</th>
+                      <th className="px-4 py-3">Type</th>
+                      <th className="px-4 py-3">Host</th>
+                      <th className="px-4 py-3">Database</th>
+                      <th className="px-4 py-3">User</th>
+                      <th className="px-4 py-3 text-right">Roles</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {connections.map((conn) => (
+                      <tr
+                        key={conn.id}
+                        className="border-b border-slate-900/60 last:border-b-0 hover:bg-slate-900/80"
+                      >
+                        <td className="px-4 py-3 text-slate-100">
+                          {conn.name}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-300">
+                          <span className="rounded-full border border-slate-700 px-2 py-0.5 font-mono uppercase tracking-wide">
+                            {conn.db_type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-300">
+                          {conn.host}:{conn.port}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-300">
+                          <span className="font-mono">{conn.database}</span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-300">
+                          <span className="font-mono">{conn.username}</span>
+                        </td>
+                        <td className="px-4 py-3 text-right text-xs">
+                          {conn.is_source && (
+                            <span className="mr-1 rounded-full border border-emerald-500/40 px-2 py-0.5 text-emerald-300">
+                              source
+                            </span>
+                          )}
+                          {conn.is_destination && (
+                            <span className="rounded-full border border-sky-500/40 px-2 py-0.5 text-sky-300">
+                              dest
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60">
-            <table className="min-w-full text-left text-sm">
-              <thead className="border-b border-slate-800 bg-slate-900/80 text-xs uppercase text-slate-400">
-                <tr>
-                  <th className="px-4 py-3">Name</th>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">Host</th>
-                  <th className="px-4 py-3">Database</th>
-                  <th className="px-4 py-3">User</th>
-                  <th className="px-4 py-3 text-right">Roles</th>
-                </tr>
-              </thead>
-              <tbody>
-                {connections.map((conn) => (
-                  <tr
-                    key={conn.id}
-                    className="border-b border-slate-900/60 last:border-b-0 hover:bg-slate-900/80"
-                  >
-                    <td className="px-4 py-3 text-slate-100">{conn.name}</td>
-                    <td className="px-4 py-3 text-xs text-slate-300">
-                      <span className="rounded-full border border-slate-700 px-2 py-0.5 font-mono uppercase tracking-wide">
-                        {conn.db_type}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-300">
-                      {conn.host}:{conn.port}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-300">
-                      <span className="font-mono">{conn.database}</span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-300">
-                      <span className="font-mono">{conn.username}</span>
-                    </td>
-                    <td className="px-4 py-3 text-right text-xs">
-                      {conn.is_source && (
-                        <span className="mr-1 rounded-full border border-emerald-500/40 px-2 py-0.5 text-emerald-300">
-                          source
-                        </span>
-                      )}
-                      {conn.is_destination && (
-                        <span className="rounded-full border border-sky-500/40 px-2 py-0.5 text-sky-300">
-                          dest
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+          {/* Right: creation form */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-5">
+            <h2 className="mb-2 text-sm font-medium text-slate-100">
+              New connection
+            </h2>
+            <p className="mb-4 text-xs text-slate-400">
+              Define a connection to a Postgres or MySQL database. PipeCraft
+              will use this for source and destination syncs.
+            </p>
+            <NewConnectionForm />
           </div>
-        )}
+        </div>
       </div>
     </main>
   );
