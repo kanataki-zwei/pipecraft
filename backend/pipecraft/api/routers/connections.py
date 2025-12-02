@@ -49,14 +49,44 @@ def test_db_connection(db_url: str) -> tuple[bool, str | None]:
         # Extract a readable error message
         msg = str(e.__cause__ or e)
         return False, msg
-
-def list_tables_for_connection(conn: models.Connection) -> list[dict]:
+    
+def list_schemas_for_connection(conn: models.Connection) -> list[str]:
     """
-    Return a list of tables for the given connection.
+    Return a list of schemas for the given connection.
 
     For v0:
-    - Postgres: only schema 'public' for now.
-    - MySQL: uses the current database, no separate schema concept.
+    - Postgres: filter out system schemas (pg_*, information_schema).
+    - MySQL: we treat the current database as a single schema.
+    """
+    db_url = build_db_url(conn)
+    engine = create_engine(db_url, pool_pre_ping=True)
+    insp = inspect(engine)
+
+    if conn.db_type == models.DBType.POSTGRES:
+        all_schemas = insp.get_schema_names()
+        # Filter out system schemas for convenience
+        filtered = [
+            s for s in all_schemas
+            if not s.startswith("pg_") and s != "information_schema"
+        ]
+        return filtered
+
+    elif conn.db_type == models.DBType.MYSQL:
+        # MySQL: effectively one logical schema per database for our purposes
+        return [conn.database]
+
+    else:
+        raise ValueError(f"Unsupported db_type: {conn.db_type}")
+
+
+def list_tables_for_connection(conn: models.Connection, schema: str) -> list[dict]:
+    """
+    Return a list of tables for the given connection and schema.
+
+    For v0:
+    - Postgres: use the given schema.
+    - MySQL: schema is effectively the database; we ignore the param
+      and use conn.database but still return it as 'schema' in the result.
     """
     db_url = build_db_url(conn)
     engine = create_engine(db_url, pool_pre_ping=True)
@@ -65,21 +95,20 @@ def list_tables_for_connection(conn: models.Connection) -> list[dict]:
     tables: list[dict] = []
 
     if conn.db_type == models.DBType.POSTGRES:
-        schema = "public"
         for table_name in insp.get_table_names(schema=schema):
             tables.append({"schema": schema, "table": table_name})
 
     elif conn.db_type == models.DBType.MYSQL:
-        # MySQL: database from connection is effectively the "schema"
-        schema = conn.database
+        # SQLAlchemy will list tables for the current database
+        actual_schema = conn.database
         for table_name in insp.get_table_names():
-            tables.append({"schema": schema, "table": table_name})
+            tables.append({"schema": actual_schema, "table": table_name})
 
     else:
-        # Should not happen in v0
         raise ValueError(f"Unsupported db_type: {conn.db_type}")
 
     return tables
+
 
 @router.post(
     "/",
@@ -180,21 +209,18 @@ def test_connection(
             "details": error,
         }
 
-@router.get("/{name}/tables")
-def list_tables(
+@router.get("/{name}/schemas")
+def list_schemas(
     name: str,
     db: Session = Depends(get_db),
 ):
     """
-    List tables available for a given connection.
+    List schemas available for a given connection.
 
-    Returns a structure like:
+    Example response:
     {
       "connection": "local_postgres",
-      "tables": [
-        {"schema": "public", "table": "users"},
-        {"schema": "public", "table": "orders"}
-      ]
+      "schemas": ["public", "analytics"]
     }
     """
     conn = (
@@ -210,7 +236,46 @@ def list_tables(
         )
 
     try:
-        tables = list_tables_for_connection(conn)
+        schemas_list = list_schemas_for_connection(conn)
+    except SQLAlchemyError as e:
+        msg = str(e.__cause__ or e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to list schemas: {msg}",
+        )
+
+    return {
+        "connection": conn.name,
+        "schemas": schemas_list,
+    }
+
+@router.get("/{name}/tables")
+def list_tables(
+    name: str,            # path param
+    schema: str,          # query param
+    db: Session = Depends(get_db),
+):
+    """
+    List tables for a given connection and schema.
+
+    Call pattern:
+    1. GET /connections/{name}/schemas  -> choose a schema
+    2. GET /connections/{name}/tables?schema=public
+    """
+    conn = (
+        db.query(models.Connection)
+        .filter(models.Connection.name == name)
+        .first()
+    )
+
+    if not conn:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Connection '{name}' not found.",
+        )
+
+    try:
+        tables = list_tables_for_connection(conn, schema=schema)
     except SQLAlchemyError as e:
         msg = str(e.__cause__ or e)
         raise HTTPException(
@@ -220,5 +285,7 @@ def list_tables(
 
     return {
         "connection": conn.name,
+        "schema": schema,
         "tables": tables,
     }
+
