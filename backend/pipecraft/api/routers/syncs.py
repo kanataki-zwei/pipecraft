@@ -97,6 +97,106 @@ def list_syncs(db: Session = Depends(get_db)):
     syncs = db.query(models.Sync).order_by(models.Sync.name).all()
     return syncs
 
+
+@router.put("/{sync_id}", response_model=schemas.SyncOut)
+def update_sync(
+    sync_id: int,
+    sync_in: schemas.SyncUpdate,
+    db: Session = Depends(get_db),
+):
+    """
+    Update an existing Sync definition.
+    For v0 this is a full update (all fields required).
+    """
+    sync = db.query(models.Sync).filter(models.Sync.id == sync_id).first()
+    if not sync:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Sync with id={sync_id} not found.",
+        )
+
+    # Enforce unique name (excluding this sync)
+    existing = (
+        db.query(models.Sync)
+        .filter(
+            models.Sync.name == sync_in.name,
+            models.Sync.id != sync_id,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Sync with this name already exists.",
+        )
+
+    # Validate source connection exists
+    source_conn = (
+        db.query(models.Connection)
+        .filter(models.Connection.id == sync_in.source_connection_id)
+        .first()
+    )
+    if not source_conn:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Source connection not found.",
+        )
+
+    # Validate dest connection exists
+    dest_conn = (
+        db.query(models.Connection)
+        .filter(models.Connection.id == sync_in.dest_connection_id)
+        .first()
+    )
+    if not dest_conn:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Destination connection not found.",
+        )
+
+    # Apply updates
+    sync.name = sync_in.name
+    sync.description = sync_in.description
+    sync.source_connection_id = sync_in.source_connection_id
+    sync.source_table = sync_in.source_table
+    sync.dest_connection_id = sync_in.dest_connection_id
+    sync.dest_schema = sync_in.dest_schema
+    sync.dest_table = sync_in.dest_table
+    sync.write_mode = models.WriteMode(sync_in.write_mode.value)
+
+    # If your Sync model has updated_at, bump it here:
+    # sync.updated_at = datetime.utcnow()
+
+    db.add(sync)
+    db.commit()
+    db.refresh(sync)
+
+    return sync
+
+
+@router.delete("/{sync_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_sync(
+    sync_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Delete a Sync and any associated SyncRuns.
+    """
+    sync = db.query(models.Sync).filter(models.Sync.id == sync_id).first()
+    if not sync:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Sync with id={sync_id} not found.",
+        )
+
+    # Remove runs first to avoid FK issues
+    db.query(models.SyncRun).filter(models.SyncRun.sync_id == sync_id).delete()
+
+    db.delete(sync)
+    db.commit()
+    # 204: no response body
+    return None
+
 def split_table_identifier(conn: models.Connection, table: str) -> tuple[str, str]:
     """
     Split a table identifier into (schema, table_name).
@@ -291,3 +391,38 @@ def run_sync(
 
     return run
 
+@router.get(
+    "/{sync_id}/runs",
+    response_model=List[schemas.SyncRunOut],
+)
+def list_sync_runs(
+    sync_id: int,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+):
+    """
+    Return recent runs for a given sync, newest first.
+
+    Used by:
+    - Syncs table (to show last run)
+    - Edit Sync modal (run history)
+    """
+    # Optional: guard that the sync exists
+    sync = db.query(models.Sync).filter(models.Sync.id == sync_id).first()
+    if not sync:
+      raise HTTPException(
+          status_code=status.HTTP_404_NOT_FOUND,
+          detail=f"Sync with id={sync_id} not found.",
+      )
+
+    q = (
+        db.query(models.SyncRun)
+        .filter(models.SyncRun.sync_id == sync_id)
+        .order_by(models.SyncRun.started_at.desc())
+    )
+
+    if limit:
+        q = q.limit(limit)
+
+    runs = q.all()
+    return runs

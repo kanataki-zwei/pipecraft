@@ -55,6 +55,12 @@ class SyncCreate(SyncBase):
     """
     pass
 
+class SyncUpdate(SyncBase):
+    """
+    Full update for a Sync. For v0 we require all fields,
+    just like create.
+    """
+    pass
 
 class SyncOut(BaseModel):
     id: int
@@ -94,6 +100,21 @@ class ConnectionCreate(ConnectionBase):
     For now, creation schema is same as base.
     """
     pass
+
+class ConnectionUpdate(BaseModel):
+    """
+    Used when updating an existing connection.
+    Password can be omitted to keep the existing one.
+    """
+    name: str = Field(..., max_length=100)
+    db_type: DBType
+    host: str
+    port: int
+    database: str
+    username: str
+    password: Optional[str] = None  
+    is_source: bool = True
+    is_destination: bool = True
 
 
 class ConnectionOut(BaseModel):

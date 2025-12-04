@@ -209,6 +209,87 @@ def list_connections(db: Session = Depends(get_db)):
     connections = db.query(models.Connection).order_by(models.Connection.name).all()
     return connections
 
+@router.put(
+    "/{name}",
+    response_model=schemas.ConnectionOut,
+)
+def update_connection(
+    name: str,
+    conn_in: schemas.ConnectionUpdate,   # 👈 use ConnectionUpdate
+    db: Session = Depends(get_db),
+):
+    conn = (
+        db.query(models.Connection)
+        .filter(models.Connection.name == name)
+        .first()
+    )
+
+    if not conn:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Connection '{name}' not found.",
+        )
+
+    # Optional: allow rename but keep name unique
+    if conn.name != conn_in.name:
+        existing = (
+            db.query(models.Connection)
+            .filter(models.Connection.name == conn_in.name)
+            .first()
+        )
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Connection with this new name already exists.",
+            )
+        conn.name = conn_in.name
+
+    conn.db_type = conn_in.db_type.value
+    conn.host = conn_in.host
+    conn.port = conn_in.port
+    conn.database = conn_in.database
+    conn.username = conn_in.username
+    conn.is_source = conn_in.is_source
+    conn.is_destination = conn_in.is_destination
+
+    # 👇 only update password if a new one was sent
+    if conn_in.password:
+        conn.password = conn_in.password
+
+    db.commit()
+    db.refresh(conn)
+
+    return conn
+
+
+@router.delete(
+    "/{name}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_connection(
+    name: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Delete a stored connection by name.
+    """
+    conn = (
+        db.query(models.Connection)
+        .filter(models.Connection.name == name)
+        .first()
+    )
+
+    if not conn:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Connection '{name}' not found.",
+        )
+
+    db.delete(conn)
+    db.commit()
+    # 204: no content
+    return None
+
 @router.post("/{name}/test")
 def test_connection(
     name: str,
