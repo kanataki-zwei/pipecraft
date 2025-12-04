@@ -10,13 +10,30 @@ type Connection = {
   port?: number | string;
   database?: string;
   username?: string;
+
+  // Legacy roles if they ever existed
   roles?: string[] | string | null;
+
+  // Current flags from backend
+  is_source?: boolean;
+  is_destination?: boolean;
 };
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 type ModalMode = "create" | "edit";
+
+type FormState = {
+  name: string;
+  dbType: string;
+  host: string;
+  port: string;
+  database: string;
+  username: string;
+  password: string;
+  role: "source" | "destination";
+};
 
 export default function ConnectionsPage() {
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -26,11 +43,11 @@ export default function ConnectionsPage() {
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<ModalMode>("create");
-  const [editingName, setEditingName] = useState<string | null>(null); // 👈 use name, not id
+  const [editingName, setEditingName] = useState<string | null>(null); // use name, not id
   const [saving, setSaving] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<FormState>({
     name: "",
     dbType: "postgres",
     host: "",
@@ -38,8 +55,15 @@ export default function ConnectionsPage() {
     database: "",
     username: "",
     password: "",
-    roles: "",
+    role: "source",
   });
+
+  // Connection test state (edit mode only)
+  const [isTesting, setIsTesting] = useState(false);
+  const [testStatus, setTestStatus] = useState<"success" | "error" | null>(
+    null,
+  );
+  const [testMessage, setTestMessage] = useState<string | null>(null);
 
   const fetchConnections = async () => {
     try {
@@ -69,10 +93,15 @@ export default function ConnectionsPage() {
     fetchConnections();
   }, []);
 
-  const renderRoles = (roles: Connection["roles"]) => {
-    if (!roles) return "—";
-    if (Array.isArray(roles)) return roles.join(", ");
-    return roles;
+  const renderRole = (conn: Connection) => {
+    if (conn.is_source && !conn.is_destination) return "source";
+    if (conn.is_destination && !conn.is_source) return "destination";
+
+    // Legacy / fallback
+    const raw = conn.roles;
+    if (!raw) return "—";
+    if (Array.isArray(raw)) return raw.join(", ");
+    return raw;
   };
 
   const resetForm = () => {
@@ -84,10 +113,13 @@ export default function ConnectionsPage() {
       database: "",
       username: "",
       password: "",
-      roles: "",
+      role: "source",
     });
     setModalError(null);
-    setEditingName(null); // 👈 reset name
+    setEditingName(null);
+    setTestStatus(null);
+    setTestMessage(null);
+    setIsTesting(false);
   };
 
   const openCreateModal = () => {
@@ -97,6 +129,24 @@ export default function ConnectionsPage() {
   };
 
   const openEditModal = (conn: Connection) => {
+    let role: "source" | "destination" = "source";
+
+    if (conn.is_destination && !conn.is_source) {
+      role = "destination";
+    } else if (conn.is_source && !conn.is_destination) {
+      role = "source";
+    } else if (!conn.is_source && !conn.is_destination && conn.roles) {
+      const rolesArray = Array.isArray(conn.roles)
+        ? conn.roles.map((r) => r.toLowerCase())
+        : conn.roles
+            .split(",")
+            .map((r) => r.trim().toLowerCase())
+            .filter(Boolean);
+
+      if (rolesArray.includes("destination")) role = "destination";
+      else if (rolesArray.includes("source")) role = "source";
+    }
+
     setForm({
       name: conn.name ?? "",
       dbType: conn.db_type ?? "postgres",
@@ -104,14 +154,15 @@ export default function ConnectionsPage() {
       port: conn.port?.toString() ?? "5432",
       database: conn.database ?? "",
       username: conn.username ?? "",
-      password: "", // don’t prefill (we don't usually get it back)
-      roles: Array.isArray(conn.roles)
-        ? conn.roles.join(", ")
-        : conn.roles ?? "",
+      password: "", // don’t prefill
+      role,
     });
     setModalError(null);
-    setEditingName(conn.name ?? null); // 👈 store original name
+    setEditingName(conn.name ?? null);
     setModalMode("edit");
+    setTestStatus(null);
+    setTestMessage(null);
+    setIsTesting(false);
     setIsModalOpen(true);
   };
 
@@ -121,31 +172,22 @@ export default function ConnectionsPage() {
       setSaving(true);
       setModalError(null);
 
-      const rolesArray =
-        form.roles.trim().length > 0
-          ? form.roles.split(",").map((r) => r.trim())
-          : [];
-
       const payload = {
         name: form.name,
         db_type: form.dbType,
         host: form.host,
-        port:
-          form.port.trim().length > 0
-            ? Number(form.port)
-            : undefined,
+        port: form.port.trim().length > 0 ? Number(form.port) : undefined,
         database: form.database,
         username: form.username,
-        password:
-          form.password.trim().length > 0 ? form.password : null,
-        roles: rolesArray,
+        password: form.password.trim().length > 0 ? form.password : null,
+        is_source: form.role === "source",
+        is_destination: form.role === "destination",
       };
 
       let url = `${API_BASE_URL}/connections`;
       let method: "POST" | "PUT" = "POST";
 
       if (modalMode === "edit" && editingName) {
-        // use original name in path
         url = `${API_BASE_URL}/connections/${encodeURIComponent(
           editingName,
         )}`;
@@ -211,6 +253,60 @@ export default function ConnectionsPage() {
       setModalError(err.message || "Failed to delete connection");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    if (modalMode !== "edit" || !editingName) return;
+
+    try {
+      setIsTesting(true);
+      setTestStatus(null);
+      setTestMessage(null);
+
+      const res = await fetch(
+        `${API_BASE_URL}/connections/${encodeURIComponent(
+          editingName,
+        )}/test`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+
+      if (!res.ok) {
+        const text = await res.text();
+        setTestStatus("error");
+        setTestMessage(
+          `Connection test failed (status ${res.status}): ${text}`,
+        );
+        return;
+      }
+
+      const body = (await res.json().catch(() => ({}))) as {
+        status?: string;
+        message?: string;
+        details?: string;
+      };
+
+      if (body.status === "success") {
+        setTestStatus("success");
+        setTestMessage(body.message ?? "Connection successful.");
+      } else {
+        const details = body.details ? ` Details: ${body.details}` : "";
+        setTestStatus("error");
+        setTestMessage(
+          (body.message ?? "Connection failed.") + details,
+        );
+      }
+    } catch (err: any) {
+      console.error(err);
+      setTestStatus("error");
+      setTestMessage(
+        err?.message || "Connection test failed due to a network error.",
+      );
+    } finally {
+      setIsTesting(false);
     }
   };
 
@@ -286,7 +382,7 @@ export default function ConnectionsPage() {
                     <th className="px-4 py-2 text-left">Host</th>
                     <th className="px-4 py-2 text-left">Database</th>
                     <th className="px-4 py-2 text-left">User</th>
-                    <th className="px-4 py-2 text-left">Roles</th>
+                    <th className="px-4 py-2 text-left">Role</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
@@ -317,7 +413,7 @@ export default function ConnectionsPage() {
                         {conn.username || "—"}
                       </td>
                       <td className="px-4 py-2 align-top text-sm text-slate-200">
-                        {renderRoles(conn.roles)}
+                        {renderRole(conn)}
                       </td>
                     </tr>
                   ))}
@@ -357,7 +453,7 @@ export default function ConnectionsPage() {
                   </label>
                   <input
                     required
-                    disabled={modalMode === "edit"} // 👈 keep name fixed when editing
+                    disabled={modalMode === "edit"}
                     className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none focus:border-emerald-400 disabled:opacity-70"
                     value={form.name}
                     onChange={(e) =>
@@ -461,19 +557,55 @@ export default function ConnectionsPage() {
                 </div>
               </div>
 
+              {/* Role: source OR destination */}
               <div>
-                <label className="block text-xs font-medium text-slate-200">
-                  Roles (comma separated)
-                </label>
-                <input
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none focus:border-emerald-400"
-                  value={form.roles}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, roles: e.target.value }))
-                  }
-                  placeholder="source, destination"
-                />
+                <span className="block text-xs font-medium text-slate-200">
+                  Role *
+                </span>
+                <p className="mt-1 text-[11px] text-slate-400">
+                  Each connection can only be used as either a source or a
+                  destination.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-4 text-xs">
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="role"
+                      className="h-3 w-3 rounded border-slate-600 bg-slate-900"
+                      checked={form.role === "source"}
+                      onChange={() =>
+                        setForm((f) => ({ ...f, role: "source" }))
+                      }
+                    />
+                    <span className="text-slate-200">Source</span>
+                  </label>
+
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="role"
+                      className="h-3 w-3 rounded border-slate-600 bg-slate-900"
+                      checked={form.role === "destination"}
+                      onChange={() =>
+                        setForm((f) => ({ ...f, role: "destination" }))
+                      }
+                    />
+                    <span className="text-slate-200">Destination</span>
+                  </label>
+                </div>
               </div>
+
+              {testMessage && modalMode === "edit" && (
+                <p
+                  className={`mt-2 text-xs ${
+                    testStatus === "success"
+                      ? "text-emerald-300"
+                      : "text-red-300"
+                  }`}
+                >
+                  {testMessage}
+                </p>
+              )}
 
               <div className="mt-4 flex items-center justify-between gap-3 pt-2">
                 {modalMode === "edit" && (
@@ -488,6 +620,17 @@ export default function ConnectionsPage() {
                 )}
 
                 <div className="ml-auto flex gap-3">
+                  {modalMode === "edit" && (
+                    <button
+                      type="button"
+                      onClick={handleTestConnection}
+                      disabled={saving || isTesting}
+                      className="rounded-lg border border-emerald-500/60 bg-slate-950 px-4 py-2 text-sm text-emerald-300 hover:bg-slate-900 disabled:opacity-60"
+                    >
+                      {isTesting ? "Testing…" : "Test connection"}
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => {
