@@ -171,6 +171,14 @@ def create_connection(
     Create a new connection (postgres or mysql).
     Connection name must be unique.
     """
+
+    # Enforce exactly one role
+    if conn_in.is_source == conn_in.is_destination:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Connection must be either a source or a destination, but not both or neither.",
+        )
+
     existing = (
         db.query(models.Connection)
         .filter(models.Connection.name == conn_in.name)
@@ -194,11 +202,12 @@ def create_connection(
         is_destination=conn_in.is_destination,
     )
 
-    db.add(conn)
-    db.commit()
+    db.add(conn);
+    db.commit();
     db.refresh(conn)
 
     return conn
+
 
 
 @router.get("/", response_model=List[schemas.ConnectionOut])
@@ -215,9 +224,16 @@ def list_connections(db: Session = Depends(get_db)):
 )
 def update_connection(
     name: str,
-    conn_in: schemas.ConnectionUpdate,   # 👈 use ConnectionUpdate
+    conn_in: schemas.ConnectionUpdate,
     db: Session = Depends(get_db),
 ):
+    # Enforce exactly one role
+    if conn_in.is_source == conn_in.is_destination:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Connection must be either a source or a destination, but not both or neither.",
+        )
+
     conn = (
         db.query(models.Connection)
         .filter(models.Connection.name == name)
@@ -252,7 +268,6 @@ def update_connection(
     conn.is_source = conn_in.is_source
     conn.is_destination = conn_in.is_destination
 
-    # 👇 only update password if a new one was sent
     if conn_in.password:
         conn.password = conn_in.password
 
@@ -260,6 +275,7 @@ def update_connection(
     db.refresh(conn)
 
     return conn
+
 
 
 @router.delete(

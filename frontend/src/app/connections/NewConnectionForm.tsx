@@ -16,8 +16,7 @@ type FormState = {
   database: string;
   username: string;
   password: string;
-  is_source: boolean;
-  is_destination: boolean;
+  role: "source" | "destination";
 };
 
 export default function NewConnectionForm() {
@@ -30,8 +29,7 @@ export default function NewConnectionForm() {
     database: "",
     username: "",
     password: "",
-    is_source: true,
-    is_destination: true,
+    role: "source",
   });
 
   const [submitting, setSubmitting] = useState(false);
@@ -49,8 +47,15 @@ export default function NewConnectionForm() {
     setSuccess(null);
 
     const body = {
-      ...form,
+      name: form.name,
+      db_type: form.db_type,
+      host: form.host,
       port: Number(form.port) || 0,
+      database: form.database,
+      username: form.username,
+      password: form.password,
+      is_source: form.role === "source",
+      is_destination: form.role === "destination",
     };
 
     try {
@@ -182,25 +187,28 @@ export default function NewConnectionForm() {
               value={form.password}
               onChange={(e) => updateField("password", e.target.value)}
               className="w-full rounded-md border border-slate-800 bg-slate-900 px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
-          />
+            />
           </div>
         </div>
 
+        {/* Role: source OR destination */}
         <div className="flex items-center gap-4 pt-1">
           <label className="flex items-center gap-1.5 text-[11px] text-slate-300">
             <input
-              type="checkbox"
-              checked={form.is_source}
-              onChange={(e) => updateField("is_source", e.target.checked)}
+              type="radio"
+              name="role"
+              checked={form.role === "source"}
+              onChange={() => updateField("role", "source")}
               className="h-3 w-3 rounded border-slate-700 bg-slate-900"
             />
             Source
           </label>
           <label className="flex items-center gap-1.5 text-[11px] text-slate-300">
             <input
-              type="checkbox"
-              checked={form.is_destination}
-              onChange={(e) => updateField("is_destination", e.target.checked)}
+              type="radio"
+              name="role"
+              checked={form.role === "destination"}
+              onChange={() => updateField("role", "destination")}
               className="h-3 w-3 rounded border-slate-700 bg-slate-900"
             />
             Destination
@@ -218,15 +226,9 @@ export default function NewConnectionForm() {
         </button>
       </div>
 
-      {error && (
-        <p className="text-[11px] text-rose-400">
-          {error}
-        </p>
-      )}
+      {error && <p className="text-[11px] text-rose-400">{error}</p>}
       {success && (
-        <p className="text-[11px] text-emerald-400">
-          {success}
-        </p>
+        <p className="text-[11px] text-emerald-400">{success}</p>
       )}
     </form>
   );
